@@ -113,7 +113,7 @@ if faceTracker.frameCount == initialFrames {
 cameraSpinner.stop(finalMessage: "Camera ready")
 
 // 3. Load or run calibration
-var calibration: [String: Double]?
+var calibration: [String: GazePoint]?
 if !config.calibrate {
     calibration = Calibration.load(from: config.calibrationFile)
     if calibration != nil {
@@ -135,12 +135,12 @@ if calibration == nil {
 let cal = calibration!
 
 // 4. Print startup summary
-let sortedCal = cal.sorted { $0.value < $1.value }
+let sortedCal = cal.sorted { $0.value.yaw < $1.value.yaw }
 let boundaryValues = Calibration.boundaries(from: cal)
 
-let monitorSummary: [(name: String, yaw: Double)] = sortedCal.map { idStr, yaw in
+let monitorSummary: [(name: String, gaze: GazePoint)] = sortedCal.map { idStr, gaze in
     let name = monitors.first { String($0.id) == idStr }?.name ?? "?"
-    return (name: name, yaw: yaw)
+    return (name: name, gaze: gaze)
 }
 
 CLI.printStartupSummary(
@@ -160,6 +160,7 @@ var lastSwitchTime = Date.distantPast
 
 while running {
     if let yaw = faceTracker.latestYaw {
+        let pitch = faceTracker.latestPitch ?? 0.0
         let cursorMonitor = MonitorManager.currentMonitor()
         let leftMouseDown = CGEventSource.buttonState(.combinedSessionState, button: .left)
         if lastLeftMouseDown && !leftMouseDown, let cursorMonitor {
@@ -170,7 +171,7 @@ while running {
         lastLeftMouseDown = leftMouseDown
 
         let target = Calibration.targetMonitor(
-            yaw: yaw,
+            yaw: yaw, pitch: pitch,
             calibration: cal,
             currentMonitor: gazeMonitor ?? focusedMonitor ?? 0
         )
@@ -178,7 +179,7 @@ while running {
 
         if config.verbose {
             let targetName = monitors.first { $0.id == target }?.name ?? "?"
-            CLI.printTrackingStatus(yaw: yaw, targetName: targetName)
+            CLI.printTrackingStatus(yaw: yaw, pitch: pitch, targetName: targetName)
         }
 
         if gazeMonitor != lastAppliedGazeMonitor {

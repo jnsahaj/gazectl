@@ -1,9 +1,14 @@
 import Foundation
 
+struct GazePoint {
+    let yaw: Double
+    let pitch: Double
+}
+
 enum Calibration {
     // MARK: - Persistence
 
-    static func load(from path: String) -> [String: Double]? {
+    static func load(from path: String) -> [String: GazePoint]? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
@@ -11,12 +16,16 @@ enum Calibration {
                 CLI.warning("Calibration file is corrupt, will recalibrate")
                 return nil
             }
-            var result: [String: Double] = [:]
+            var result: [String: GazePoint] = [:]
             for (key, value) in dict {
-                if let d = value as? Double {
-                    result[key] = d
-                } else if let n = value as? NSNumber {
-                    result[key] = n.doubleValue
+                if let obj = value as? [String: Any],
+                   let yaw = obj["yaw"] as? Double,
+                   let pitch = obj["pitch"] as? Double {
+                    result[key] = GazePoint(yaw: yaw, pitch: pitch)
+                } else if value is Double || value is NSNumber {
+                    // Old format (yaw-only) — needs recalibration
+                    CLI.warning("Old calibration format, will recalibrate")
+                    return nil
                 }
             }
             return result.isEmpty ? nil : result
@@ -26,14 +35,18 @@ enum Calibration {
         }
     }
 
-    static func save(_ calibration: [String: Double], to path: String) {
+    static func save(_ calibration: [String: GazePoint], to path: String) {
         let dir = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(
             atPath: dir, withIntermediateDirectories: true
         )
+        var dict: [String: [String: Double]] = [:]
+        for (key, point) in calibration {
+            dict[key] = ["yaw": point.yaw, "pitch": point.pitch]
+        }
         do {
             let data = try JSONSerialization.data(
-                withJSONObject: calibration, options: [.prettyPrinted, .sortedKeys]
+                withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]
             )
             try data.write(to: URL(fileURLWithPath: path))
             CLI.success("Saved calibration")
@@ -44,17 +57,22 @@ enum Calibration {
 
     // MARK: - Sampling
 
-    static func sampleYaw(faceTracker: FaceTracker, duration: TimeInterval = 2.0) -> Double? {
-        var samples: [Double] = []
+    static func sampleGaze(faceTracker: FaceTracker, duration: TimeInterval = 2.0) -> GazePoint? {
+        var yawSamples: [Double] = []
+        var pitchSamples: [Double] = []
         let start = Date()
         let expectedSamples = Int(duration / 0.033)
 
         while Date().timeIntervalSince(start) < duration {
             if let yaw = faceTracker.latestYaw {
-                samples.append(yaw)
+                yawSamples.append(yaw)
+                if let pitch = faceTracker.latestPitch {
+                    pitchSamples.append(pitch)
+                }
                 CLI.printSamplingProgress(
                     yaw: yaw,
-                    sampleCount: samples.count,
+                    pitch: faceTracker.latestPitch,
+                    sampleCount: yawSamples.count,
                     totalSamples: expectedSamples
                 )
             }
@@ -64,9 +82,12 @@ enum Calibration {
         print("\(Style.clearLine)\r", terminator: "")
         fflush(stdout)
 
-        guard !samples.isEmpty else { return nil }
-        let sorted = samples.sorted()
-        return sorted[sorted.count / 2]
+        guard !yawSamples.isEmpty else { return nil }
+        let sortedYaw = yawSamples.sorted()
+        let sortedPitch = pitchSamples.sorted()
+        let medianYaw = sortedYaw[sortedYaw.count / 2]
+        let medianPitch = sortedPitch.isEmpty ? 0.0 : sortedPitch[sortedPitch.count / 2]
+        return GazePoint(yaw: medianYaw, pitch: medianPitch)
     }
 
     // MARK: - Interactive calibration
@@ -74,29 +95,29 @@ enum Calibration {
     static func run(
         faceTracker: FaceTracker,
         monitors: [Monitor]
-    ) -> [String: Double]? {
+    ) -> [String: GazePoint]? {
         CLI.printCalibrationHeader(monitorCount: monitors.count)
 
-        var calibration: [String: Double] = [:]
+        var calibration: [String: GazePoint] = [:]
 
         for (index, m) in monitors.enumerated() {
             CLI.printCalibrationPrompt(m.name, step: index + 1, total: monitors.count)
             guard readLine() != nil else { return nil }
 
-            var yaw = sampleYaw(faceTracker: faceTracker)
-            if yaw == nil {
+            var gaze = sampleGaze(faceTracker: faceTracker)
+            if gaze == nil {
                 CLI.warning("No face detected. Try again.")
                 CLI.printCalibrationPrompt(m.name, step: index + 1, total: monitors.count)
                 guard readLine() != nil else { return nil }
-                yaw = sampleYaw(faceTracker: faceTracker)
-                if yaw == nil {
+                gaze = sampleGaze(faceTracker: faceTracker)
+                if gaze == nil {
                     CLI.error("Still no face detected. Skipping.")
                     continue
                 }
             }
 
-            calibration[String(m.id)] = yaw!
-            CLI.printCalibrationResult(m.name, yaw: yaw!)
+            calibration[String(m.id)] = gaze!
+            CLI.printCalibrationResult(m.name, gaze: gaze!)
         }
 
         if calibration.count < 2 {
@@ -104,10 +125,10 @@ enum Calibration {
             exit(1)
         }
 
-        let sorted = calibration.sorted { $0.value < $1.value }
-        let entries: [(name: String, yaw: Double)] = sorted.map { idStr, yaw in
+        let sorted = calibration.sorted { $0.value.yaw < $1.value.yaw }
+        let entries: [(name: String, gaze: GazePoint)] = sorted.map { idStr, gaze in
             let name = monitors.first { String($0.id) == idStr }?.name ?? "?"
-            return (name: name, yaw: yaw)
+            return (name: name, gaze: gaze)
         }
         CLI.printCalibrationSummary(entries)
 
@@ -116,53 +137,47 @@ enum Calibration {
 
     // MARK: - Target monitor selection
 
-    /// Fraction of the gap between adjacent monitors used as hysteresis on each
-    /// side of the midpoint.  A value of 0.15 means you must cross 15% past the
-    /// midpoint before switching, creating a 30% dead-zone that prevents flicker.
-    private static let hysteresis = 0.15
+    /// Hysteresis factor applied as a distance bonus for the current monitor.
+    /// A value of 0.25 means you must be 25% closer to another monitor's
+    /// calibration point before switching, preventing flicker at boundaries.
+    private static let hysteresis = 0.25
 
-    static func targetMonitor(yaw: Double, calibration: [String: Double], currentMonitor: Int = 0) -> Int {
-        let sorted = calibration.sorted { $0.value < $1.value }
-
-        guard let first = sorted.first, let last = sorted.last else { return 0 }
-
-        if yaw <= first.value {
-            return Int(first.key) ?? 0
-        }
-        if yaw >= last.value {
-            return Int(last.key) ?? 0
-        }
+    static func targetMonitor(
+        yaw: Double, pitch: Double,
+        calibration: [String: GazePoint],
+        currentMonitor: Int = 0
+    ) -> Int {
+        guard !calibration.isEmpty else { return 0 }
 
         let currentKey = String(currentMonitor)
+        var bestMonitor = 0
+        var bestDistance = Double.infinity
 
-        for i in 0..<(sorted.count - 1) {
-            let midpoint = (sorted[i].value + sorted[i + 1].value) / 2.0
-            let margin  = (sorted[i + 1].value - sorted[i].value) * hysteresis
+        for (key, point) in calibration {
+            let dy = yaw - point.yaw
+            let dp = pitch - point.pitch
+            var distance = sqrt(dy * dy + dp * dp)
 
-            // Shift the boundary away from whichever adjacent monitor we're on,
-            // so the user has to look further before a switch triggers.
-            let boundary: Double
-            if currentKey == sorted[i].key {
-                boundary = midpoint + margin   // harder to leave left monitor
-            } else if currentKey == sorted[i + 1].key {
-                boundary = midpoint - margin   // harder to leave right monitor
-            } else {
-                boundary = midpoint
+            // Hysteresis: the current monitor gets a distance bonus,
+            // so you have to look noticeably closer to another before switching.
+            if key == currentKey {
+                distance *= (1.0 - hysteresis)
             }
 
-            if yaw < boundary {
-                return Int(sorted[i].key) ?? 0
+            if distance < bestDistance {
+                bestDistance = distance
+                bestMonitor = Int(key) ?? 0
             }
         }
 
-        return Int(last.key) ?? 0
+        return bestMonitor
     }
 
-    static func boundaries(from calibration: [String: Double]) -> [Double] {
-        let sorted = calibration.sorted { $0.value < $1.value }
+    static func boundaries(from calibration: [String: GazePoint]) -> [Double] {
+        let sorted = calibration.sorted { $0.value.yaw < $1.value.yaw }
         var result: [Double] = []
         for i in 0..<(sorted.count - 1) {
-            result.append((sorted[i].value + sorted[i + 1].value) / 2.0)
+            result.append((sorted[i].value.yaw + sorted[i + 1].value.yaw) / 2.0)
         }
         return result
     }

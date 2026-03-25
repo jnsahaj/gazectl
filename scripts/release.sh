@@ -35,9 +35,10 @@ echo "    binary: bin/gazectl-bin ($SIZE)"
 
 echo "==> Updating version to $VERSION..."
 npm version "$VERSION" --no-git-tag-version
+sed -i '' "s/static let version = \".*\"/static let version = \"$VERSION\"/" Sources/CLI.swift
 
 echo "==> Committing and tagging..."
-git add package.json
+git add package.json Sources/CLI.swift
 git commit -m "v$VERSION"
 git tag "v$VERSION"
 

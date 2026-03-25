@@ -89,7 +89,7 @@ enum CLI {
 
     // MARK: - Version
 
-    static let version = "0.5.6"
+    static let version = "0.6.0"
 
     static func printVersion() {
         print("gazectl \(version)")
@@ -181,18 +181,20 @@ enum CLI {
         return "\(Style.cyan)\(bar)\(Style.reset) \(Style.dim)\(pct)%\(Style.reset)"
     }
 
-    static func printSamplingProgress(yaw: Double, sampleCount: Int, totalSamples: Int) {
+    static func printSamplingProgress(yaw: Double, pitch: Double?, sampleCount: Int, totalSamples: Int) {
         let bar = progressBar(current: sampleCount, total: totalSamples)
         let yawStr = String(format: "%+.1f°", yaw)
-        print("\(Style.clearLine)\r  \(bar)  \(Style.dim)yaw:\(Style.reset) \(Style.cyan)\(yawStr)\(Style.reset)", terminator: "")
+        let pitchStr = pitch.map { String(format: "%+.1f°", $0) } ?? "—"
+        print("\(Style.clearLine)\r  \(bar)  \(Style.dim)yaw:\(Style.reset) \(Style.cyan)\(yawStr)\(Style.reset)  \(Style.dim)pitch:\(Style.reset) \(Style.cyan)\(pitchStr)\(Style.reset)", terminator: "")
         fflush(stdout)
     }
 
     // MARK: - Tracking status line
 
-    static func printTrackingStatus(yaw: Double, targetName: String) {
+    static func printTrackingStatus(yaw: Double, pitch: Double, targetName: String) {
         let yawStr = String(format: "%+6.1f°", yaw)
-        print("\(Style.clearLine)\r  \(Style.dim)yaw\(Style.reset) \(Style.cyan)\(yawStr)\(Style.reset)  \(Style.dim)→\(Style.reset)  \(Style.bold)\(targetName)\(Style.reset)", terminator: "")
+        let pitchStr = String(format: "%+6.1f°", pitch)
+        print("\(Style.clearLine)\r  \(Style.dim)yaw\(Style.reset) \(Style.cyan)\(yawStr)\(Style.reset)  \(Style.dim)pitch\(Style.reset) \(Style.cyan)\(pitchStr)\(Style.reset)  \(Style.dim)→\(Style.reset)  \(Style.bold)\(targetName)\(Style.reset)", terminator: "")
         fflush(stdout)
     }
 
@@ -213,18 +215,20 @@ enum CLI {
         print("  \(Style.dim)[\(step)/\(total)]\(Style.reset) Look at \(Style.bold)\(monitorName)\(Style.reset), press \(Style.cyan)Enter\(Style.reset), and keep looking for \(Style.bold)2s\(Style.reset)")
     }
 
-    static func printCalibrationResult(_ monitorName: String, yaw: Double) {
-        let yawStr = String(format: "%+.1f°", yaw)
-        print("  \(Style.green)✓\(Style.reset) \(Style.bold)\(monitorName)\(Style.reset)  \(Style.cyan)\(yawStr)\(Style.reset)")
+    static func printCalibrationResult(_ monitorName: String, gaze: GazePoint) {
+        let yawStr = String(format: "%+.1f°", gaze.yaw)
+        let pitchStr = String(format: "%+.1f°", gaze.pitch)
+        print("  \(Style.green)✓\(Style.reset) \(Style.bold)\(monitorName)\(Style.reset)  \(Style.dim)yaw\(Style.reset) \(Style.cyan)\(yawStr)\(Style.reset)  \(Style.dim)pitch\(Style.reset) \(Style.cyan)\(pitchStr)\(Style.reset)")
     }
 
-    static func printCalibrationSummary(_ entries: [(name: String, yaw: Double)]) {
+    static func printCalibrationSummary(_ entries: [(name: String, gaze: GazePoint)]) {
         print()
         print("  \(Style.bold)\(Style.green)✓ Calibration complete\(Style.reset)")
         print()
         for entry in entries {
-            let yawStr = String(format: "%+.1f°", entry.yaw)
-            print("    \(Style.bold)\(entry.name)\(Style.reset)  \(Style.cyan)\(yawStr)\(Style.reset)")
+            let yawStr = String(format: "%+.1f°", entry.gaze.yaw)
+            let pitchStr = String(format: "%+.1f°", entry.gaze.pitch)
+            print("    \(Style.bold)\(entry.name)\(Style.reset)  \(Style.dim)yaw\(Style.reset) \(Style.cyan)\(yawStr)\(Style.reset)  \(Style.dim)pitch\(Style.reset) \(Style.cyan)\(pitchStr)\(Style.reset)")
         }
         print()
     }
@@ -232,15 +236,16 @@ enum CLI {
     // MARK: - Startup summary
 
     static func printStartupSummary(
-        monitors: [(name: String, yaw: Double)],
+        monitors: [(name: String, gaze: GazePoint)],
         boundaries: [Double],
         verbose: Bool
     ) {
         print()
         print("  \(Style.bold)Monitors\(Style.reset)")
         for m in monitors {
-            let yawStr = String(format: "%+.1f°", m.yaw)
-            print("    \(Style.cyan)●\(Style.reset) \(Style.bold)\(m.name)\(Style.reset)  \(Style.dim)\(yawStr)\(Style.reset)")
+            let yawStr = String(format: "%+.1f°", m.gaze.yaw)
+            let pitchStr = String(format: "%+.1f°", m.gaze.pitch)
+            print("    \(Style.cyan)●\(Style.reset) \(Style.bold)\(m.name)\(Style.reset)  \(Style.dim)yaw \(yawStr)  pitch \(pitchStr)\(Style.reset)")
         }
         print()
         let bStr = boundaries.map { String(format: "%+.1f°", $0) }.joined(separator: "  ")
