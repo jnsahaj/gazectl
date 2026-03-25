@@ -63,15 +63,28 @@ enum CLI {
 
     // MARK: - Banner
 
-    static func printBanner() {
-        let art = """
+    private static func fg256(_ n: Int) -> String { "\u{1B}[38;5;\(n)m" }
 
-        \(Style.cyan)\(Style.bold)  ┌─────────────────────────────────┐
-          │\(Style.reset)\(Style.bold)   👁  gazectl                    \(Style.cyan)│
-          │\(Style.reset)\(Style.dim)   head tracking display switcher  \(Style.cyan)\(Style.bold)│
-          └─────────────────────────────────┘\(Style.reset)
-        """
-        print(art)
+    static func printBanner() {
+        let lines = [
+            " ██████╗  █████╗ ███████╗███████╗ ██████╗████████╗██╗     ",
+            "██╔════╝ ██╔══██╗╚══███╔╝██╔════╝██╔════╝╚══██╔══╝██║     ",
+            "██║  ███╗███████║  ███╔╝ █████╗  ██║        ██║   ██║     ",
+            "██║   ██║██╔══██║ ███╔╝  ██╔══╝  ██║        ██║   ██║     ",
+            "╚██████╔╝██║  ██║███████╗███████╗╚██████╗   ██║   ███████╗",
+            " ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝   ╚═╝   ╚══════╝",
+        ]
+        // Gradient from bright to dim (256-color palette)
+        let colors = [250, 248, 245, 243, 240, 238]
+
+        print()
+        for (i, line) in lines.enumerated() {
+            let color = colors[i % colors.count]
+            print("\(fg256(color))\(line)\(Style.reset)")
+        }
+        print()
+        print("\(Style.dim)  head tracking display switcher\(Style.reset)")
+        print()
     }
 
     // MARK: - Styled help
@@ -79,15 +92,13 @@ enum CLI {
     static func printUsage() {
         printBanner()
         print("""
-        \(Style.bold)  USAGE\(Style.reset)
-            gazectl [options]
+          \(Style.dim)$\(Style.reset) gazectl [options]
 
-        \(Style.bold)  OPTIONS\(Style.reset)
-            \(Style.cyan)--calibrate\(Style.reset)            Force recalibration
-            \(Style.cyan)--calibration-file\(Style.reset) F   Path to calibration file
-            \(Style.cyan)--camera\(Style.reset) N             Camera index \(Style.dim)(default: 0)\(Style.reset)
-            \(Style.cyan)--verbose\(Style.reset)              Print yaw angle continuously
-            \(Style.cyan)-h, --help\(Style.reset)             Show this help
+          \(Style.cyan)--calibrate\(Style.reset)            Force recalibration
+          \(Style.cyan)--calibration-file\(Style.reset) F   Path to calibration file
+          \(Style.cyan)--camera\(Style.reset) N             Camera index \(Style.dim)(default: 0)\(Style.reset)
+          \(Style.cyan)--verbose\(Style.reset)              Print yaw angle continuously
+          \(Style.cyan)-h, --help\(Style.reset)             Show this help
         """)
     }
 
@@ -190,7 +201,8 @@ enum CLI {
     }
 
     static func printCalibrationPrompt(_ monitorName: String, step: Int, total: Int) {
-        print("  \(Style.dim)[\(step)/\(total)]\(Style.reset) Look at \(Style.bold)\(monitorName)\(Style.reset) and press \(Style.cyan)Enter\(Style.reset)…", terminator: "")
+        print("  \(Style.dim)[\(step)/\(total)]\(Style.reset) Look at \(Style.bold)\(monitorName)\(Style.reset) and press \(Style.cyan)Enter\(Style.reset)")
+        print("        \(Style.dim)Keep looking at the monitor for 2s after pressing Enter\(Style.reset)", terminator: "")
         fflush(stdout)
     }
 
