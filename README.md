@@ -1,22 +1,37 @@
-# gazectl
+<p align="center">
 
-Head tracking display focus switcher for macOS + [Aerospace](https://github.com/nikitabobko/AerospaceWM).
-
-Uses your webcam and Apple's Vision framework to detect which way your head is turned, then switches Aerospace monitor focus automatically.
-
-## Install
-
-```bash
-npm i -g gazectl
+```
+ ██████╗  █████╗ ███████╗███████╗ ██████╗████████╗██╗
+██╔════╝ ██╔══██╗╚══███╔╝██╔════╝██╔════╝╚══██╔══╝██║
+██║  ███╗███████║  ███╔╝ █████╗  ██║        ██║   ██║
+██║   ██║██╔══██║ ███╔╝  ██╔══╝  ██║        ██║   ██║
+╚██████╔╝██║  ██║███████╗███████╗╚██████╗   ██║   ███████╗
+ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝   ╚═╝   ╚══════╝
 ```
 
-Or run directly:
+**Head tracking display switcher for macOS**
+
+<img src="assets/demo.png" width="500" />
+
+</p>
+
+---
+
+gazectl uses your webcam to detect which monitor you're looking at and automatically switches focus to it. It uses Apple's Vision framework for real-time face tracking and works with the [Aerospace](https://github.com/nikitabobko/AerospaceWM) tiling window manager.
+
+> macOS only. Requires macOS 14+ and [Aerospace](https://github.com/nikitabobko/AerospaceWM).
+
+## Install
 
 ```bash
 npx gazectl
 ```
 
-Requires macOS 14+ and [Aerospace](https://github.com/nikitabobko/AerospaceWM).
+Or install globally:
+
+```bash
+npm i -g gazectl
+```
 
 ## Usage
 
@@ -24,11 +39,11 @@ Requires macOS 14+ and [Aerospace](https://github.com/nikitabobko/AerospaceWM).
 # First run — calibrates automatically
 gazectl
 
-# With verbose logging
-gazectl --verbose
-
 # Force recalibration
 gazectl --calibrate
+
+# With verbose logging
+gazectl --verbose
 ```
 
 On first run, gazectl asks you to look at each monitor and press Enter. It samples your head angle for 2 seconds per monitor, then saves calibration to `~/.local/share/gazectl/calibration.json`.
