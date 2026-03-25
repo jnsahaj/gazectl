@@ -1,6 +1,6 @@
 {
   "name": "gazectl",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Head tracking display focus switcher for macOS + Aerospace",
   "bin": {
     "gazectl": "bin/gazectl"
