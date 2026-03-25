@@ -72,12 +72,19 @@ CLI.printBanner()
 // 1. Check monitors
 let monitorSpinner = CLI.Spinner("Detecting monitors…")
 monitorSpinner.start()
+
+if !AerospaceMonitor.isInstalled() {
+    monitorSpinner.fail(finalMessage: "aerospace is not installed or not in PATH")
+    CLI.info("Install: https://github.com/nikitabobko/AeroSpace")
+    exit(1)
+}
+
 let monitors = AerospaceMonitor.listMonitors()
 
 if monitors.count < 2 {
     monitorSpinner.fail(finalMessage: "Need at least 2 monitors (found \(monitors.count))")
     if monitors.isEmpty {
-        CLI.info("Is aerospace installed and running?")
+        CLI.info("Is aerospace running? Try: aerospace list-monitors")
     }
     exit(1)
 }
@@ -121,7 +128,13 @@ if !config.calibrate {
 
 if calibration == nil {
     calibration = Calibration.run(faceTracker: faceTracker, monitors: monitors)
-    Calibration.save(calibration!, to: config.calibrationFile)
+    guard let cal = calibration else {
+        // User cancelled (Ctrl+C / EOF)
+        faceTracker.stop()
+        CLI.printExit()
+        exit(0)
+    }
+    Calibration.save(cal, to: config.calibrationFile)
 }
 
 let cal = calibration!

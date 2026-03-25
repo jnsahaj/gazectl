@@ -201,9 +201,7 @@ enum CLI {
     }
 
     static func printCalibrationPrompt(_ monitorName: String, step: Int, total: Int) {
-        print("  \(Style.dim)[\(step)/\(total)]\(Style.reset) Look at \(Style.bold)\(monitorName)\(Style.reset) and press \(Style.cyan)Enter\(Style.reset)")
-        print("        \(Style.dim)Keep looking at the monitor for 2s after pressing Enter\(Style.reset)", terminator: "")
-        fflush(stdout)
+        print("  \(Style.dim)[\(step)/\(total)]\(Style.reset) Look at \(Style.bold)\(monitorName)\(Style.reset), press \(Style.cyan)Enter\(Style.reset), and keep looking for \(Style.bold)2s\(Style.reset)")
     }
 
     static func printCalibrationResult(_ monitorName: String, yaw: Double) {

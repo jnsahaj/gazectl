@@ -8,6 +8,7 @@ enum Calibration {
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                CLI.warning("Calibration file is corrupt, will recalibrate")
                 return nil
             }
             var result: [String: Double] = [:]
@@ -20,6 +21,7 @@ enum Calibration {
             }
             return result.isEmpty ? nil : result
         } catch {
+            CLI.warning("Cannot read calibration file: \(error.localizedDescription)")
             return nil
         }
     }
@@ -72,20 +74,20 @@ enum Calibration {
     static func run(
         faceTracker: FaceTracker,
         monitors: [AerospaceMonitor.Monitor]
-    ) -> [String: Double] {
+    ) -> [String: Double]? {
         CLI.printCalibrationHeader(monitorCount: monitors.count)
 
         var calibration: [String: Double] = [:]
 
         for (index, m) in monitors.enumerated() {
             CLI.printCalibrationPrompt(m.name, step: index + 1, total: monitors.count)
-            _ = readLine()
+            guard readLine() != nil else { return nil }
 
             var yaw = sampleYaw(faceTracker: faceTracker)
             if yaw == nil {
                 CLI.warning("No face detected. Try again.")
                 CLI.printCalibrationPrompt(m.name, step: index + 1, total: monitors.count)
-                _ = readLine()
+                guard readLine() != nil else { return nil }
                 yaw = sampleYaw(faceTracker: faceTracker)
                 if yaw == nil {
                     CLI.error("Still no face detected. Skipping.")

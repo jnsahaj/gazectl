@@ -30,6 +30,21 @@ enum AerospaceMonitor {
         return Int(idStr.trimmingCharacters(in: .whitespaces))
     }
 
+    static func isInstalled() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        process.arguments = ["aerospace"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
     static func focusMonitor(_ id: Int) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -43,17 +58,25 @@ enum AerospaceMonitor {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["aerospace"] + args
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
             return nil
         }
-        guard process.terminationStatus == 0 else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        if process.terminationStatus != 0 {
+            let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            if let errStr = String(data: errData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !errStr.isEmpty {
+                CLI.warning("aerospace \(args.joined(separator: " ")): \(errStr)")
+            }
+            return nil
+        }
+        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)
     }
 }
