@@ -8,6 +8,7 @@ struct Config {
     var calibrationFile: String
     var cameraIndex = 0
     var verbose = false
+    var debug = false
 
     static let defaultCalibrationPath: String = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -41,6 +42,8 @@ func parseArgs() -> Config {
             config.cameraIndex = idx
         case "--verbose":
             config.verbose = true
+        case "--debug":
+            config.debug = true
         case "-v", "--version":
             CLI.printVersion()
             exit(0)
@@ -150,11 +153,8 @@ CLI.printStartupSummary(
 )
 
 // 5. Tracking loop
-let initialFocusedMonitor = MonitorManager.focusedMonitor()
-var focusedMonitor = initialFocusedMonitor ?? MonitorManager.currentMonitor()
-var gazeMonitor = focusedMonitor
+var gazeMonitor = MonitorManager.focusedMonitor() ?? MonitorManager.currentMonitor()
 var lastAppliedGazeMonitor = gazeMonitor
-var lastLeftMouseDown = CGEventSource.buttonState(.combinedSessionState, button: .left)
 let switchCooldown: TimeInterval = 0.5   // minimum seconds between switches
 var lastSwitchTime = Date.distantPast
 
@@ -162,18 +162,14 @@ while running {
     if let yaw = faceTracker.latestYaw {
         let pitch = faceTracker.latestPitch ?? 0.0
         let cursorMonitor = MonitorManager.currentMonitor()
-        let leftMouseDown = CGEventSource.buttonState(.combinedSessionState, button: .left)
-        if lastLeftMouseDown && !leftMouseDown, let cursorMonitor {
-            focusedMonitor = cursorMonitor
-        } else if let detectedFocusedMonitor = MonitorManager.focusedMonitor() {
-            focusedMonitor = detectedFocusedMonitor
-        }
-        lastLeftMouseDown = leftMouseDown
+        // Focus tracking is no longer used for transition decisions.
+        // transition() queries AX API directly when cursor is on target,
+        // and always clicks when moving cursor cross-monitor.
 
         let target = Calibration.targetMonitor(
             yaw: yaw, pitch: pitch,
             calibration: cal,
-            currentMonitor: gazeMonitor ?? focusedMonitor ?? 0
+            currentMonitor: gazeMonitor ?? 0
         )
         gazeMonitor = target
 
@@ -185,21 +181,37 @@ while running {
         if gazeMonitor != lastAppliedGazeMonitor {
             let transition = MonitorManager.transition(
                 to: target,
-                focusedMonitor: focusedMonitor,
                 cursorMonitor: cursorMonitor
             )
+
+            if config.debug {
+                let targetName = monitors.first { $0.id == target }?.name ?? "?"
+                let cursorName = cursorMonitor.flatMap { cm in monitors.first { $0.id == cm }?.name } ?? "nil"
+                let axMonitor = MonitorManager.focusedMonitor()
+                let axName = axMonitor.flatMap { am in monitors.first { $0.id == am }?.name } ?? "nil"
+                CLI.debug("""
+                [TRANSITION] gaze→\(targetName) | \
+                cursor=\(cursorName) (id:\(cursorMonitor.map(String.init) ?? "nil")) \
+                ax=\(axName) (id:\(axMonitor.map(String.init) ?? "nil")) \
+                → \(transition)
+                """)
+            }
 
             if transition.requiresAction {
                 let now = Date()
                 if now.timeIntervalSince(lastSwitchTime) >= switchCooldown {
                     let name = monitors.first { $0.id == target }?.name ?? "?"
-                    MonitorManager.focusMonitor(target, transition: transition)
-                    focusedMonitor = target
+                    MonitorManager.focusMonitor(target, transition: transition, debug: config.debug)
                     lastAppliedGazeMonitor = target
                     lastSwitchTime = now
                     CLI.printFocusSwitch(name)
+                } else if config.debug {
+                    CLI.debug("[COOLDOWN] \(String(format: "%.2f", Date().timeIntervalSince(lastSwitchTime)))s < \(switchCooldown)s — skipped")
                 }
             } else {
+                if config.debug {
+                    CLI.debug("[NO-ACTION] transition=\(transition), updating lastApplied without action")
+                }
                 lastAppliedGazeMonitor = target
             }
         }

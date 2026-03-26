@@ -53,6 +53,10 @@ enum CLI {
         print("  \(Style.dim)\(text)\(Style.reset)")
     }
 
+    static func debug(_ text: String) {
+        print("  \(Style.gray)[DBG]\(Style.reset) \(Style.dim)\(text)\(Style.reset)")
+    }
+
     static func label(_ key: String, _ value: String) {
         print("  \(Style.dim)\(key)\(Style.reset) \(value)")
     }
@@ -104,6 +108,7 @@ enum CLI {
           \(Style.cyan)--calibration-file\(Style.reset) F   Path to calibration file
           \(Style.cyan)--camera\(Style.reset) N             Camera index \(Style.dim)(default: 0)\(Style.reset)
           \(Style.cyan)--verbose\(Style.reset)              Print yaw angle continuously
+          \(Style.cyan)--debug\(Style.reset)                Log transition decision points
           \(Style.cyan)-v, --version\(Style.reset)          Print version
           \(Style.cyan)-h, --help\(Style.reset)             Show this help
         """)

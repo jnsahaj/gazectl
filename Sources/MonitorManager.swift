@@ -8,7 +8,7 @@ struct Monitor {
     let name: String
 }
 
-enum MonitorTransition {
+enum MonitorTransition: CustomStringConvertible {
     case none
     case move
     case click
@@ -20,6 +20,15 @@ enum MonitorTransition {
 
     var appliesFocus: Bool {
         self == .click || self == .moveAndClick
+    }
+
+    var description: String {
+        switch self {
+        case .none: return ".none"
+        case .move: return ".move"
+        case .click: return ".click"
+        case .moveAndClick: return ".moveAndClick"
+        }
     }
 }
 
@@ -90,33 +99,41 @@ enum MonitorManager {
 
     static func transition(
         to id: Int,
-        focusedMonitor: Int?,
         cursorMonitor: Int?
     ) -> MonitorTransition {
-        let isFocused = focusedMonitor == id
         let hasCursor = cursorMonitor == id
 
-        switch (isFocused, hasCursor) {
-        case (false, false):
+        if hasCursor {
+            // Cursor already on target — use AX API to check if focused
+            let axFocused = focusedMonitor() == id
+            return axFocused ? .none : .click
+        } else {
+            // Moving cursor cross-monitor — always click.
+            // The old .move case (focused but cursor elsewhere) was unreliable:
+            // clicking empty desktop doesn't change the focused app per AX API,
+            // so "focused" was often stale. Always clicking is safe and reliable.
             return .moveAndClick
-        case (false, true):
-            return .click
-        case (true, false):
-            return .move
-        case (true, true):
-            return .none
         }
     }
 
-    static func focusMonitor(_ id: Int, transition: MonitorTransition) {
+    static func focusMonitor(_ id: Int, transition: MonitorTransition, debug: Bool = false) {
         guard transition.requiresAction else { return }
 
         let displayID = CGDirectDisplayID(id)
         let bounds = CGDisplayBounds(displayID)
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
 
+        if debug {
+            let cursorBefore = CGEvent(source: nil)?.location ?? .zero
+            CLI.debug("[EXEC] display=\(displayID) bounds=\(bounds) center=\(center) cursorBefore=\(cursorBefore) transition=\(transition)")
+        }
+
         if transition == .move || transition == .moveAndClick {
             CGWarpMouseCursorPosition(center)
+            if debug {
+                let cursorAfterWarp = CGEvent(source: nil)?.location ?? .zero
+                CLI.debug("[WARP] target=\(center) cursorAfterWarp=\(cursorAfterWarp)")
+            }
         }
 
         if transition.appliesFocus {
@@ -125,8 +142,20 @@ enum MonitorManager {
                 : center
             let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: clickPos, mouseButton: .left)
             let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: clickPos, mouseButton: .left)
+
+            if debug {
+                CLI.debug("[CLICK] pos=\(clickPos) mouseDown=\(mouseDown != nil ? "ok" : "FAILED") mouseUp=\(mouseUp != nil ? "ok" : "FAILED")")
+            }
+
             mouseDown?.post(tap: .cghidEventTap)
             mouseUp?.post(tap: .cghidEventTap)
+
+            if debug {
+                let cursorAfterClick = CGEvent(source: nil)?.location ?? .zero
+                CLI.debug("[POST-CLICK] cursorAfterClick=\(cursorAfterClick)")
+            }
+        } else if debug {
+            CLI.debug("[NO-CLICK] transition=\(transition) — appliesFocus=false")
         }
     }
 
