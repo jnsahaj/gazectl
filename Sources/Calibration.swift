@@ -101,21 +101,30 @@ enum Calibration {
         var calibration: [String: GazePoint] = [:]
 
         for (index, m) in monitors.enumerated() {
+            ScreenHighlight.show(for: m.id)
             CLI.printCalibrationPrompt(m.name, step: index + 1, total: monitors.count)
-            guard readLine() != nil else { return nil }
+            guard readLine() != nil else {
+                ScreenHighlight.hide()
+                return nil
+            }
 
             var gaze = sampleGaze(faceTracker: faceTracker)
             if gaze == nil {
                 CLI.warning("No face detected. Try again.")
                 CLI.printCalibrationPrompt(m.name, step: index + 1, total: monitors.count)
-                guard readLine() != nil else { return nil }
+                guard readLine() != nil else {
+                    ScreenHighlight.hide()
+                    return nil
+                }
                 gaze = sampleGaze(faceTracker: faceTracker)
                 if gaze == nil {
                     CLI.error("Still no face detected. Skipping.")
+                    ScreenHighlight.hide()
                     continue
                 }
             }
 
+            ScreenHighlight.hide()
             calibration[String(m.id)] = gaze!
             CLI.printCalibrationResult(m.name, gaze: gaze!)
         }
