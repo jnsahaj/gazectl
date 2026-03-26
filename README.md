@@ -95,3 +95,25 @@ cp .build/release/gazectl /usr/local/bin/gazectl
     </picture>
   </a>
 </p>
+
+## Local Testing
+
+### Linux and Windows
+To test `gazectl` locally without globally installing it, make sure the required Python packages are installed:
+```bash
+pip install opencv-python mediapipe pyautogui screeninfo
+```
+Then, execute the Node.js wrapper directly:
+```bash
+node bin/gazectl --help
+```
+
+### macOS
+If developing on macOS, make sure to compile the swift binary first using:
+```bash
+npm run build:npm-binary
+```
+Then execute the wrapper:
+```bash
+node bin/gazectl --help
+```

@@ -168,20 +168,41 @@ class FaceTracker:
 
 
 class Calibration:
+
     @staticmethod
     def load(path):
         if not os.path.exists(path):
             return None
-        with open(path, 'r') as f:
-            data = json.load(f)
-            # Reconstruct the calibration object
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+
+            # Basic schema validation
+            if not isinstance(data, dict):
+                raise ValueError("Calibration data is not a dictionary.")
+            for k, v in data.items():
+                if not isinstance(v, dict) or 'yaw' not in v or 'pitch' not in v:
+                    raise ValueError(f"Monitor {k} is missing yaw or pitch.")
             return data
+        except Exception as e:
+            print(f"Warning: Failed to load calibration file {path}: {e}")
+            return None
+
 
     @staticmethod
     def save(cal, path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w') as f:
-            json.dump(cal, f, indent=4)
+        dir_path = os.path.dirname(path)
+        if dir_path:
+            try:
+                os.makedirs(dir_path, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating directory {dir_path}: {e}")
+                return
+        try:
+            with open(path, 'w') as f:
+                json.dump(cal, f, indent=4)
+        except Exception as e:
+            print(f"Error saving calibration to {path}: {e}")
 
     @staticmethod
     def run(face_tracker, monitors):
