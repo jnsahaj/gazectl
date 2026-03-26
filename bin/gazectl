@@ -11,7 +11,14 @@ const rootDir = path.resolve(__dirname, '..');
 if (os === 'darwin') {
   const binPath = path.join(__dirname, 'gazectl-bin');
   const result = spawnSync(binPath, args, { stdio: 'inherit' });
-  process.exit(result.status || 0);
+  if (result.error) {
+    console.error(result.error);
+    process.exit(1);
+  }
+  if (result.signal) {
+    process.kill(process.pid, result.signal);
+  }
+  process.exit(result.status !== null ? result.status : 1);
 } else {
   // Linux or Windows: Use Python
   let pyCmd = 'python3';
@@ -32,5 +39,12 @@ if (os === 'darwin') {
 
   const pyScript = path.join(rootDir, 'gazectl.py');
   const result = spawnSync(pyCmd, [pyScript, ...args], { stdio: 'inherit' });
-  process.exit(result.status || 0);
+  if (result.error) {
+    console.error(result.error);
+    process.exit(1);
+  }
+  if (result.signal) {
+    process.kill(process.pid, result.signal);
+  }
+  process.exit(result.status !== null ? result.status : 1);
 }
