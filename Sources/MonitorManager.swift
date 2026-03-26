@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import AppKit
+import ApplicationServices
 
 struct Monitor {
     let id: Int
@@ -62,6 +63,15 @@ enum MonitorManager {
     }
 
     static func focusedMonitor() -> Int? {
+        // Strategy 1: CGWindowList — works for apps like Arc that don't expose AX attributes
+        if let result = focusedMonitorViaCGWindowList() {
+            return result
+        }
+        // Strategy 2: AX API — works for apps like Claude Desktop that CGWindowList misses
+        return focusedMonitorViaAccessibility()
+    }
+
+    private static func focusedMonitorViaCGWindowList() -> Int? {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else {
             return nil
         }
@@ -92,6 +102,76 @@ enum MonitorManager {
         }
 
         return nil
+    }
+
+    private static func focusedMonitorViaAccessibility() -> Int? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedAppValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedApplicationAttribute as CFString,
+            &focusedAppValue
+        ) == .success,
+        let focusedAppValue,
+        CFGetTypeID(focusedAppValue) == AXUIElementGetTypeID() else {
+            return nil
+        }
+
+        let appElement = unsafeBitCast(focusedAppValue, to: AXUIElement.self)
+        for attribute in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+            var windowValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(
+                appElement,
+                attribute as CFString,
+                &windowValue
+            ) == .success,
+            let windowValue,
+            CFGetTypeID(windowValue) == AXUIElementGetTypeID() else {
+                continue
+            }
+
+            let windowElement = unsafeBitCast(windowValue, to: AXUIElement.self)
+            if let frame = windowFrame(for: windowElement) {
+                return monitorContaining(point: CGPoint(x: frame.midX, y: frame.midY))
+            }
+        }
+
+        return nil
+    }
+
+    private static func windowFrame(for element: AXUIElement) -> CGRect? {
+        var positionValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+
+        guard AXUIElementCopyAttributeValue(
+            element,
+            kAXPositionAttribute as CFString,
+            &positionValue
+        ) == .success,
+        AXUIElementCopyAttributeValue(
+            element,
+            kAXSizeAttribute as CFString,
+            &sizeValue
+        ) == .success,
+        let positionValue,
+        let sizeValue,
+        CFGetTypeID(positionValue) == AXValueGetTypeID(),
+        CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
+            return nil
+        }
+
+        let positionAXValue = unsafeBitCast(positionValue, to: AXValue.self)
+        let sizeAXValue = unsafeBitCast(sizeValue, to: AXValue.self)
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetType(positionAXValue) == .cgPoint,
+              AXValueGetType(sizeAXValue) == .cgSize,
+              AXValueGetValue(positionAXValue, .cgPoint, &position),
+              AXValueGetValue(sizeAXValue, .cgSize, &size) else {
+            return nil
+        }
+
+        return CGRect(origin: position, size: size)
     }
 
     static func transition(
