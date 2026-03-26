@@ -1,13 +1,14 @@
 {
   "name": "gazectl",
   "version": "0.8.2",
-  "description": "Head tracking display focus switcher for macOS",
+  "description": "Head tracking display focus switcher for macOS, Linux, and Windows",
   "bin": {
     "gazectl": "bin/gazectl"
   },
   "files": [
     "bin/gazectl",
-    "bin/gazectl-bin"
+    "bin/gazectl-bin",
+    "gazectl.py"
   ],
   "scripts": {
     "build:npm-binary": "./scripts/build-npm-binary.sh",
@@ -23,12 +24,17 @@
     "focus",
     "accessibility",
     "macos",
+    "linux",
+    "windows",
     "webcam",
     "swift",
+    "python",
     "vision"
   ],
   "os": [
-    "darwin"
+    "darwin",
+    "linux",
+    "win32"
   ],
   "author": "Sahaj Jain",
   "license": "MIT",

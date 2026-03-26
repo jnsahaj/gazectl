@@ -7,7 +7,7 @@
       ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝   ╚═╝   ╚══════╝
 </pre>
 
-**Head tracking display switcher for macOS**
+**Head tracking display switcher for macOS, Linux, and Windows**
 
 <br />
 
@@ -17,18 +17,24 @@
 
 ---
 
-`gazectl` uses your webcam to detect which monitor you're looking at and automatically switches focus to it. It uses Apple's Vision framework for real-time face tracking and native macOS APIs to switch monitor focus — no third-party window manager required.
+`gazectl` uses your webcam to detect which monitor you're looking at and automatically switches focus to it. On macOS, it uses Apple's Vision framework for real-time face tracking and native macOS APIs to switch monitor focus — no third-party window manager required. On Linux and Windows, it seamlessly uses Python along with `mediapipe` for tracking and `pyautogui` for screen management.
 
-> macOS only. Requires macOS 14+.
+> macOS 14+, Linux, and Windows supported.
 
-## Permissions
+## Dependencies
 
+### macOS
 gazectl needs two macOS permissions to work:
-
 - **Camera** — for head tracking via the webcam
 - **Accessibility** — for moving the cursor and clicking to switch monitor focus
 
 Grant both in **System Settings → Privacy & Security**. macOS will prompt you on first run.
+
+### Linux and Windows
+You must have Python 3 installed. You will need to install the dependencies required for tracking and screen management:
+```bash
+pip install opencv-python mediapipe pyautogui screeninfo
+```
 
 ## Install
 
