@@ -3,3 +3,4 @@ bin/gazectl-bin
 node_modules/
 .venv/
 face_landmarker.task
+__pycache__

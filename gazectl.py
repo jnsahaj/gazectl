@@ -8,7 +8,6 @@ import mediapipe as mp
 import threading
 import json
 import math
-import pyautogui
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Head tracking display switcher for Linux/Windows")
@@ -289,8 +288,15 @@ def main():
     gaze_monitor = monitors[0]['id'] if monitors else 0
     last_applied = gaze_monitor
 
-    # Ensure pyautogui safety checks don't kill the app if cursor hits corner
-    pyautogui.FAILSAFE = False
+
+    try:
+        import pyautogui
+        # Ensure pyautogui safety checks don't kill the app if cursor hits corner
+        pyautogui.FAILSAFE = False
+    except Exception as e:
+        print(f"Error initializing display automation (X11/Wayland issue): {e}")
+        print("Please ensure your display server allows automation or check $DISPLAY.")
+        sys.exit(1)
 
     try:
         while True:
