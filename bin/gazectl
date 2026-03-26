@@ -26,23 +26,42 @@ if (os === 'darwin') {
   handleSpawnResult(result);
 } else {
   // Linux or Windows: Use Python
-  let pyCmd = 'python3';
+  let candidates = [];
   if (os === 'win32') {
-    pyCmd = 'python'; // Typically `python` on Windows
+    candidates = [
+      { cmd: 'py', args: ['-3'] },
+      { cmd: 'python3', args: [] },
+      { cmd: 'python', args: [] }
+    ];
+  } else {
+    candidates = [
+      { cmd: 'python3', args: [] },
+      { cmd: 'python', args: [] }
+    ];
   }
 
-  // Check if python is available
-  const checkPython = spawnSync(pyCmd, ['--version'], { stdio: 'ignore' });
-  if (checkPython.error) {
-    pyCmd = 'python'; // fallback to python
-    const checkPython2 = spawnSync(pyCmd, ['--version'], { stdio: 'ignore' });
-    if (checkPython2.error) {
-      console.error(`Error: Python could not be found. gazectl requires Python 3 on Linux/Windows.`);
-      process.exit(1);
+  let finalCmd = null;
+  let finalBaseArgs = [];
+
+  for (const { cmd, args: baseArgs } of candidates) {
+    const checkResult = spawnSync(cmd, [...baseArgs, '--version'], { encoding: 'utf8' });
+    if (!checkResult.error && checkResult.status === 0) {
+      // Python outputs version to stdout (3.4+) or stderr (2.x)
+      const output = (checkResult.stdout || '') + (checkResult.stderr || '');
+      if (output.includes('Python 3.')) {
+        finalCmd = cmd;
+        finalBaseArgs = baseArgs;
+        break;
+      }
     }
   }
 
+  if (!finalCmd) {
+    console.error(`Error: Python 3 could not be found. gazectl requires Python 3 on Linux/Windows.`);
+    process.exit(1);
+  }
+
   const pyScript = path.join(rootDir, 'gazectl.py');
-  const result = spawnSync(pyCmd, [pyScript, ...args], { stdio: 'inherit' });
+  const result = spawnSync(finalCmd, [...finalBaseArgs, pyScript, ...args], { stdio: 'inherit' });
   handleSpawnResult(result);
 }
