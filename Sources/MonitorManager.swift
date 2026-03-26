@@ -178,19 +178,14 @@ enum MonitorManager {
         to id: Int,
         cursorMonitor: Int?
     ) -> MonitorTransition {
-        let hasCursor = cursorMonitor == id
-
-        if hasCursor {
-            // Cursor already on target — check if frontmost app window is here
-            let axFocused = focusedMonitor() == id
-            return axFocused ? .none : .click
-        } else {
-            // Moving cursor cross-monitor — always click.
-            // The old .move case (focused but cursor elsewhere) was unreliable:
-            // clicking empty desktop doesn't change the focused app per AX API,
-            // so "focused" was often stale. Always clicking is safe and reliable.
-            return .moveAndClick
-        }
+        // Simple binary: cursor already where user is looking → do nothing.
+        // Otherwise warp + click. Focus detection (AX API, CGWindowList) is
+        // unreliable from a CLI — synthetic clicks don't update
+        // frontmostApplication, AX returns nil for some apps (Arc), and
+        // Ghostty (our host terminal) stays frontmost after we click its
+        // monitor. If the user needs to click an app on the target monitor,
+        // they'll click themselves.
+        return cursorMonitor == id ? .none : .moveAndClick
     }
 
     static func focusMonitor(_ id: Int, transition: MonitorTransition, debug: Bool = false) {
