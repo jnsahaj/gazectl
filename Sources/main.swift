@@ -100,14 +100,11 @@ do {
     exit(1)
 }
 
-// Wait for camera to initialize
-Thread.sleep(forTimeInterval: 1.0)
 cameraSpinner.update("Waiting for frames…")
 
 // Check if camera is actually delivering frames
-let initialFrames = faceTracker.frameCount
-Thread.sleep(forTimeInterval: 1.0)
-if faceTracker.frameCount == initialFrames {
+let initialFrameCount = faceTracker.frameCount
+if faceTracker.waitForNextSample(after: initialFrameCount, timeout: 2.0) == nil {
     cameraSpinner.fail(finalMessage: "No frames received from camera")
     CLI.info("Check System Settings → Privacy & Security → Camera")
     faceTracker.stop()
@@ -136,13 +133,14 @@ if calibration == nil {
 }
 
 let cal = calibration!
+let monitorNamesByID = Dictionary(uniqueKeysWithValues: monitors.map { ($0.id, $0.name) })
 
 // 4. Print startup summary
 let sortedCal = cal.sorted { $0.value.yaw < $1.value.yaw }
 let boundaryValues = Calibration.boundaries(from: cal)
 
 let monitorSummary: [(name: String, gaze: GazePoint)] = sortedCal.map { idStr, gaze in
-    let name = monitors.first { String($0.id) == idStr }?.name ?? "?"
+    let name = Int(idStr).flatMap { monitorNamesByID[$0] } ?? "?"
     return (name: name, gaze: gaze)
 }
 
@@ -157,66 +155,74 @@ var gazeMonitor = MonitorManager.focusedMonitor() ?? MonitorManager.currentMonit
 var lastAppliedGazeMonitor = gazeMonitor
 let switchCooldown: TimeInterval = 0.5   // minimum seconds between switches
 var lastSwitchTime = Date.distantPast
+var lastFrameCount = faceTracker.frameCount
 
 while running {
-    if let yaw = faceTracker.latestYaw {
-        let pitch = faceTracker.latestPitch ?? 0.0
+    guard let sample = faceTracker.waitForNextSample(after: lastFrameCount, timeout: 0.25) else {
+        continue
+    }
+
+    lastFrameCount = sample.frameCount
+
+    guard let yaw = sample.yaw else {
+        continue
+    }
+
+    let pitch = sample.pitch ?? 0.0
+    // Focus tracking is no longer used for transition decisions.
+    // transition() queries AX API directly when cursor is on target,
+    // and always clicks when moving cursor cross-monitor.
+
+    let target = Calibration.targetMonitor(
+        yaw: yaw, pitch: pitch,
+        calibration: cal,
+        currentMonitor: gazeMonitor ?? 0
+    )
+    gazeMonitor = target
+
+    if config.verbose {
+        let targetName = monitorNamesByID[target] ?? "?"
+        CLI.printTrackingStatus(yaw: yaw, pitch: pitch, targetName: targetName)
+    }
+
+    if gazeMonitor != lastAppliedGazeMonitor {
         let cursorMonitor = MonitorManager.currentMonitor()
-        // Focus tracking is no longer used for transition decisions.
-        // transition() queries AX API directly when cursor is on target,
-        // and always clicks when moving cursor cross-monitor.
-
-        let target = Calibration.targetMonitor(
-            yaw: yaw, pitch: pitch,
-            calibration: cal,
-            currentMonitor: gazeMonitor ?? 0
+        let transition = MonitorManager.transition(
+            to: target,
+            cursorMonitor: cursorMonitor
         )
-        gazeMonitor = target
 
-        if config.verbose {
-            let targetName = monitors.first { $0.id == target }?.name ?? "?"
-            CLI.printTrackingStatus(yaw: yaw, pitch: pitch, targetName: targetName)
+        if config.debug {
+            let targetName = monitorNamesByID[target] ?? "?"
+            let cursorName = cursorMonitor.flatMap { monitorNamesByID[$0] } ?? "nil"
+            let axMonitor = MonitorManager.focusedMonitor()
+            let axName = axMonitor.flatMap { monitorNamesByID[$0] } ?? "nil"
+            CLI.debug("""
+            [TRANSITION] gaze→\(targetName) | \
+            cursor=\(cursorName) (id:\(cursorMonitor.map(String.init) ?? "nil")) \
+            ax=\(axName) (id:\(axMonitor.map(String.init) ?? "nil")) \
+            → \(transition)
+            """)
         }
 
-        if gazeMonitor != lastAppliedGazeMonitor {
-            let transition = MonitorManager.transition(
-                to: target,
-                cursorMonitor: cursorMonitor
-            )
-
-            if config.debug {
-                let targetName = monitors.first { $0.id == target }?.name ?? "?"
-                let cursorName = cursorMonitor.flatMap { cm in monitors.first { $0.id == cm }?.name } ?? "nil"
-                let axMonitor = MonitorManager.focusedMonitor()
-                let axName = axMonitor.flatMap { am in monitors.first { $0.id == am }?.name } ?? "nil"
-                CLI.debug("""
-                [TRANSITION] gaze→\(targetName) | \
-                cursor=\(cursorName) (id:\(cursorMonitor.map(String.init) ?? "nil")) \
-                ax=\(axName) (id:\(axMonitor.map(String.init) ?? "nil")) \
-                → \(transition)
-                """)
-            }
-
-            if transition.requiresAction {
-                let now = Date()
-                if now.timeIntervalSince(lastSwitchTime) >= switchCooldown {
-                    let name = monitors.first { $0.id == target }?.name ?? "?"
-                    MonitorManager.focusMonitor(target, transition: transition, debug: config.debug)
-                    lastAppliedGazeMonitor = target
-                    lastSwitchTime = now
-                    CLI.printFocusSwitch(name)
-                } else if config.debug {
-                    CLI.debug("[COOLDOWN] \(String(format: "%.2f", Date().timeIntervalSince(lastSwitchTime)))s < \(switchCooldown)s — skipped")
-                }
-            } else {
-                if config.debug {
-                    CLI.debug("[NO-ACTION] transition=\(transition), updating lastApplied without action")
-                }
+        if transition.requiresAction {
+            let now = Date()
+            if now.timeIntervalSince(lastSwitchTime) >= switchCooldown {
+                let name = monitorNamesByID[target] ?? "?"
+                MonitorManager.focusMonitor(target, transition: transition, debug: config.debug)
                 lastAppliedGazeMonitor = target
+                lastSwitchTime = now
+                CLI.printFocusSwitch(name)
+            } else if config.debug {
+                CLI.debug("[COOLDOWN] \(String(format: "%.2f", now.timeIntervalSince(lastSwitchTime)))s < \(switchCooldown)s — skipped")
             }
+        } else {
+            if config.debug {
+                CLI.debug("[NO-ACTION] transition=\(transition), updating lastApplied without action")
+            }
+            lastAppliedGazeMonitor = target
         }
     }
-    Thread.sleep(forTimeInterval: 0.033)
 }
 
 // Cleanup

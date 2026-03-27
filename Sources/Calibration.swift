@@ -62,21 +62,27 @@ enum Calibration {
         var pitchSamples: [Double] = []
         let start = Date()
         let expectedSamples = Int(duration / 0.033)
+        var lastFrameCount = faceTracker.frameCount
 
         while Date().timeIntervalSince(start) < duration {
-            if let yaw = faceTracker.latestYaw {
+            guard let sample = faceTracker.waitForNextSample(after: lastFrameCount, timeout: 0.1) else {
+                continue
+            }
+
+            lastFrameCount = sample.frameCount
+
+            if let yaw = sample.yaw {
                 yawSamples.append(yaw)
-                if let pitch = faceTracker.latestPitch {
+                if let pitch = sample.pitch {
                     pitchSamples.append(pitch)
                 }
                 CLI.printSamplingProgress(
                     yaw: yaw,
-                    pitch: faceTracker.latestPitch,
+                    pitch: sample.pitch,
                     sampleCount: yawSamples.count,
                     totalSamples: expectedSamples
                 )
             }
-            Thread.sleep(forTimeInterval: 0.033)
         }
         // Clear the progress line
         print("\(Style.clearLine)\r", terminator: "")

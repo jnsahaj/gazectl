@@ -4,7 +4,11 @@ import CoreVideo
 
 final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let session = AVCaptureSession()
-    private let videoQueue = DispatchQueue(label: "com.gazectl.camera", qos: .userInteractive)
+    private let videoQueue = DispatchQueue(
+        label: "com.gazectl.camera",
+        qos: .userInteractive,
+        autoreleaseFrequency: .workItem
+    )
     var onFrame: ((CVPixelBuffer) -> Void)?
 
     func start(cameraIndex: Int) throws {
@@ -14,13 +18,27 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             position: .unspecified
         )
         let devices = discoverySession.devices
-        guard cameraIndex < devices.count else {
+        guard cameraIndex >= 0, cameraIndex < devices.count else {
             throw CameraCaptureError.cameraNotFound(index: cameraIndex, available: devices.count)
         }
         let device = devices[cameraIndex]
 
-        let input = try AVCaptureDeviceInput(device: device)
+        session.beginConfiguration()
+        if session.canSetSessionPreset(.vga640x480) {
+            session.sessionPreset = .vga640x480
+        } else {
+            session.sessionPreset = .medium
+        }
+
+        let input: AVCaptureDeviceInput
+        do {
+            input = try AVCaptureDeviceInput(device: device)
+        } catch {
+            session.commitConfiguration()
+            throw error
+        }
         guard session.canAddInput(input) else {
+            session.commitConfiguration()
             throw CameraCaptureError.cannotAddInput
         }
         session.addInput(input)
@@ -32,11 +50,12 @@ final class CameraCapture: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         output.alwaysDiscardsLateVideoFrames = true
         output.setSampleBufferDelegate(self, queue: videoQueue)
         guard session.canAddOutput(output) else {
+            session.commitConfiguration()
             throw CameraCaptureError.cannotAddOutput
         }
         session.addOutput(output)
 
-        session.sessionPreset = .medium
+        session.commitConfiguration()
         session.startRunning()
     }
 

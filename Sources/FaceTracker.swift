@@ -1,34 +1,38 @@
 import CoreVideo
 import Vision
 
+struct FaceSample {
+    let yaw: Double?
+    let pitch: Double?
+    let frameCount: Int
+}
+
 final class FaceTracker {
     private let camera = CameraCapture()
-    private let lock = NSLock()
-    private var _latestYaw: Double?
-    private var _smoothedYaw: Double?
-    private var _latestPitch: Double?
-    private var _smoothedPitch: Double?
-    private var _frameCount: Int = 0
+    private let condition = NSCondition()
+    private var latestSampleState = FaceSample(yaw: nil, pitch: nil, frameCount: 0)
+    private var smoothedYaw: Double?
+    private var smoothedPitch: Double?
+    private let sequenceHandler = VNSequenceRequestHandler()
+    private let faceRequest: VNDetectFaceRectanglesRequest = {
+        let request = VNDetectFaceRectanglesRequest()
+        request.revision = VNDetectFaceRectanglesRequestRevision3
+        return request
+    }()
 
     /// EMA smoothing factor (0–1). Lower = smoother / more lag, higher = more responsive / more noise.
     private let smoothing: Double = 0.3
 
     var latestYaw: Double? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _smoothedYaw
+        snapshot().yaw
     }
 
     var latestPitch: Double? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _smoothedPitch
+        snapshot().pitch
     }
 
     var frameCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return _frameCount
+        snapshot().frameCount
     }
 
     func start(cameraIndex: Int) throws {
@@ -42,46 +46,81 @@ final class FaceTracker {
         camera.stop()
     }
 
-    private func processFrame(_ pixelBuffer: CVPixelBuffer) {
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
-        let request = VNDetectFaceRectanglesRequest()
-        request.revision = VNDetectFaceRectanglesRequestRevision3
+    func snapshot() -> FaceSample {
+        condition.lock()
+        defer { condition.unlock() }
+        return latestSampleState
+    }
 
-        do {
-            try handler.perform([request])
-        } catch {
-            return
-        }
+    func waitForNextSample(after frameCount: Int, timeout: TimeInterval) -> FaceSample? {
+        let deadline = Date().addingTimeInterval(timeout)
 
-        guard let face = request.results?.first,
-              let yawNumber = face.yaw else {
-            lock.lock()
-            _latestYaw = nil
-            _latestPitch = nil
-            _frameCount += 1
-            lock.unlock()
-            return
-        }
+        condition.lock()
+        defer { condition.unlock() }
 
-        let yawDegrees = yawNumber.doubleValue * 180.0 / .pi
-        let pitchDegrees = face.pitch.map { $0.doubleValue * 180.0 / .pi }
-
-        lock.lock()
-        _latestYaw = yawDegrees
-        if let prev = _smoothedYaw {
-            _smoothedYaw = prev + smoothing * (yawDegrees - prev)
-        } else {
-            _smoothedYaw = yawDegrees
-        }
-        if let pitch = pitchDegrees {
-            if let prev = _smoothedPitch {
-                _smoothedPitch = prev + smoothing * (pitch - prev)
-            } else {
-                _smoothedPitch = pitch
+        while latestSampleState.frameCount <= frameCount {
+            if !condition.wait(until: deadline), latestSampleState.frameCount <= frameCount {
+                return nil
             }
-            _latestPitch = pitch
         }
-        _frameCount += 1
-        lock.unlock()
+
+        return latestSampleState
+    }
+
+    private func processFrame(_ pixelBuffer: CVPixelBuffer) {
+        autoreleasepool {
+            do {
+                try sequenceHandler.perform([faceRequest], on: pixelBuffer)
+            } catch {
+                return
+            }
+
+            guard let face = faceRequest.results?.first,
+                  let yawNumber = face.yaw else {
+                publishCurrentState()
+                return
+            }
+
+            let yawDegrees = yawNumber.doubleValue * 180.0 / .pi
+            let pitchDegrees = face.pitch.map { $0.doubleValue * 180.0 / .pi }
+            updateSample(yaw: yawDegrees, pitch: pitchDegrees)
+        }
+    }
+
+    private func publishCurrentState() {
+        condition.lock()
+        latestSampleState = FaceSample(
+            yaw: smoothedYaw,
+            pitch: smoothedPitch,
+            frameCount: latestSampleState.frameCount + 1
+        )
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    private func updateSample(yaw: Double, pitch: Double?) {
+        condition.lock()
+
+        if let previousYaw = smoothedYaw {
+            smoothedYaw = previousYaw + smoothing * (yaw - previousYaw)
+        } else {
+            smoothedYaw = yaw
+        }
+
+        if let pitch {
+            if let previousPitch = smoothedPitch {
+                smoothedPitch = previousPitch + smoothing * (pitch - previousPitch)
+            } else {
+                smoothedPitch = pitch
+            }
+        }
+
+        latestSampleState = FaceSample(
+            yaw: smoothedYaw,
+            pitch: smoothedPitch,
+            frameCount: latestSampleState.frameCount + 1
+        )
+        condition.broadcast()
+        condition.unlock()
     }
 }
