@@ -158,6 +158,7 @@ var lastAppliedGazeMonitor = gazeMonitor
 let switchCooldown: TimeInterval = 0.5   // minimum seconds between switches
 var lastSwitchTime = Date.distantPast
 var trackingEnabled = true
+var lastCursorPosition: [Int: CGPoint] = [:]
 
 while running {
     // Check for double-blink toggle
@@ -209,8 +210,11 @@ while running {
             if transition.requiresAction {
                 let now = Date()
                 if now.timeIntervalSince(lastSwitchTime) >= switchCooldown {
+                    if let fromMonitor = cursorMonitor, let loc = CGEvent(source: nil)?.location {
+                        lastCursorPosition[fromMonitor] = loc
+                    }
                     let name = monitors.first { $0.id == target }?.name ?? "?"
-                    MonitorManager.focusMonitor(target, transition: transition, debug: config.debug)
+                    MonitorManager.focusMonitor(target, transition: transition, restorePoint: lastCursorPosition[target], debug: config.debug)
                     lastAppliedGazeMonitor = target
                     lastSwitchTime = now
                     CLI.printFocusSwitch(name)
