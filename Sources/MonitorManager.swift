@@ -188,30 +188,35 @@ enum MonitorManager {
         return cursorMonitor == id ? .none : .moveAndClick
     }
 
-    static func focusMonitor(_ id: Int, transition: MonitorTransition, debug: Bool = false) {
+    static func focusMonitor(_ id: Int, transition: MonitorTransition, restorePoint: CGPoint? = nil, debug: Bool = false) {
         guard transition.requiresAction else { return }
 
         let displayID = CGDirectDisplayID(id)
         let bounds = CGDisplayBounds(displayID)
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let targetPoint: CGPoint
+        if let rp = restorePoint, bounds.contains(rp) {
+            targetPoint = rp
+        } else {
+            targetPoint = CGPoint(x: bounds.midX, y: bounds.midY)
+        }
 
         if debug {
             let cursorBefore = CGEvent(source: nil)?.location ?? .zero
-            CLI.debug("[EXEC] display=\(displayID) bounds=\(bounds) center=\(center) cursorBefore=\(cursorBefore) transition=\(transition)")
+            CLI.debug("[EXEC] display=\(displayID) bounds=\(bounds) target=\(targetPoint) cursorBefore=\(cursorBefore) transition=\(transition)")
         }
 
         if transition == .move || transition == .moveAndClick {
-            CGWarpMouseCursorPosition(center)
+            CGWarpMouseCursorPosition(targetPoint)
             if debug {
                 let cursorAfterWarp = CGEvent(source: nil)?.location ?? .zero
-                CLI.debug("[WARP] target=\(center) cursorAfterWarp=\(cursorAfterWarp)")
+                CLI.debug("[WARP] target=\(targetPoint) cursorAfterWarp=\(cursorAfterWarp)")
             }
         }
 
         if transition.appliesFocus {
             let clickPos = transition == .click
-                ? CGEvent(source: nil)?.location ?? center
-                : center
+                ? CGEvent(source: nil)?.location ?? targetPoint
+                : targetPoint
             let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: clickPos, mouseButton: .left)
             let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: clickPos, mouseButton: .left)
 
